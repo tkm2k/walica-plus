@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ワリカンPlus - 割り勘・貸し借り・勝ち負け精算</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --text:#1a2330; --sub:#6b7684;
+    --primary:#2563eb; --primary-dark:#1d4ed8; --danger:#dc2626;
+    --tatekae:#2563eb; --loan:#d97706; --gamble:#7c3aed;
+    --plus:#059669; --minus:#dc2626; --border:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+  .container{max-width:560px;margin:0 auto;padding:12px 14px 90px}
+  header{background:var(--primary);color:#fff;padding:14px;text-align:center;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;font-weight:700}
+  header .event-name{font-size:13px;opacity:.9;margin-top:2px}
+  .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .card h2{font-size:15px;margin-bottom:10px}
+  label{display:block;font-size:13px;color:var(--sub);margin:10px 0 4px}
+  input[type=text],input[type=number],select{width:100%;padding:11px;border:1px solid var(--border);border-radius:8px;font-size:16px;background:#fff}
+  input:focus,select:focus{outline:2px solid var(--primary);border-color:transparent}
+  button{font-size:15px;border:none;border-radius:8px;cursor:pointer;font-family:inherit}
+  .btn-primary{width:100%;padding:13px;background:var(--primary);color:#fff;font-weight:700;margin-top:14px}
+  .btn-primary:active{background:var(--primary-dark)}
+  .btn-primary:disabled{opacity:.5}
+  .btn-small{padding:6px 12px;background:#eef2ff;color:var(--primary);font-size:13px;font-weight:600}
+  .btn-danger-sm{padding:4px 10px;background:#fee2e2;color:var(--danger);font-size:12px;border-radius:6px}
+  .tabs{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);z-index:10;padding-bottom:env(safe-area-inset-bottom)}
+  .tabs button{flex:1;padding:10px 0 8px;background:none;color:var(--sub);font-size:11px;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .tabs button .ic{font-size:20px}
+  .tabs button.active{color:var(--primary);font-weight:700}
+  .seg{display:flex;background:#eef1f5;border-radius:10px;padding:3px;margin-bottom:6px}
+  .seg button{flex:1;padding:9px 4px;background:none;border-radius:8px;font-size:13px;color:var(--sub);font-weight:600}
+  .seg button.active{background:#fff;color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{padding:6px 13px;border-radius:99px;background:#fff;border:1px solid var(--border);font-size:13px;color:var(--sub)}
+  .chip.active{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff}
+  .badge.tatekae{background:var(--tatekae)} .badge.loan{background:var(--loan)} .badge.gamble{background:var(--gamble)}
+  .tx-item{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 2px;border-bottom:1px solid var(--border);gap:8px}
+  .tx-item:last-child{border-bottom:none}
+  .tx-title{font-weight:700;margin:2px 0}
+  .tx-sub{font-size:12.5px;color:var(--sub)}
+  .tx-amount{font-weight:700;white-space:nowrap;text-align:right}
+  .member-check{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .member-check label{display:flex;align-items:center;gap:5px;background:#f1f5f9;padding:8px 12px;border-radius:8px;margin:0;font-size:14px;color:var(--text);cursor:pointer}
+  .member-check label:has(input:checked){background:#dbeafe;outline:1.5px solid var(--primary)}
+  .member-check input{width:16px;height:16px}
+  .gamble-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .gamble-row .gname{flex:0 0 70px;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gamble-row input{flex:1;min-width:0}
+  .sign-toggle{display:flex;flex:0 0 auto;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .sign-toggle button{width:38px;padding:10px 0;background:#fff;color:var(--sub);font-size:16px;font-weight:700;border-radius:0}
+  .sign-toggle button+button{border-left:1px solid var(--border)}
+  .sign-toggle button.active[data-s="1"]{background:var(--plus);color:#fff}
+  .sign-toggle button.active[data-s="-1"]{background:var(--minus);color:#fff}
+  /* 数値入力のスピナー（上下ボタン）を非表示 */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield;appearance:textfield}
+  .gamble-sum{font-size:13px;font-weight:700;margin-top:4px}
+  .balance-row{display:flex;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--border)}
+  .balance-row:last-child{border-bottom:none}
+  .plus{color:var(--plus);font-weight:700} .minus{color:var(--minus);font-weight:700}
+  .settle-row{display:flex;align-items:center;justify-content:space-between;padding:13px;background:#f0f9ff;border-radius:10px;margin-bottom:8px;font-weight:600}
+  .settle-row .amt{font-weight:800;color:var(--primary)}
+  .arrow{color:var(--sub);margin:0 8px}
+  .empty{text-align:center;color:var(--sub);padding:30px 0;font-size:14px}
+  .notice{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:12px}
+  .share-bar{display:flex;gap:8px;margin-bottom:12px}
+  .share-bar input{flex:1;font-size:12px;color:var(--sub)}
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a2330;color:#fff;padding:10px 18px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+  .member-list-item{display:flex;justify-content:space-between;align-items:center;padding:9px 2px;border-bottom:1px solid var(--border)}
+  .member-list-item:last-child{border-bottom:none}
+  .add-member-row{display:flex;gap:8px;margin-top:10px}
+  .add-member-row input{flex:1}
+  .hidden{display:none!important}
+  .sort-bar{display:flex;justify-content:flex-end;margin-bottom:6px}
+  .sort-bar select{width:auto;padding:6px 10px;font-size:13px}
+  .home-member-row{display:flex;gap:8px;margin-bottom:8px}
+  .home-member-row input{flex:1}
+  .home-member-row button{flex:0 0 40px;background:#fee2e2;color:var(--danger);border-radius:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="header-title">ワリカンPlus</h1>
+  <div class="event-name" id="header-event" style="display:none"></div>
+</header>
+
+<div class="toast" id="toast"></div>
+
+<!-- ============ HOME (イベント作成) ============ -->
+<div class="container hidden" id="view-home">
+  <div id="local-notice" class="notice hidden">
+    ⚠️ <b>デモモード：</b>Supabase未設定のため、データはこの端末のブラウザ内にのみ保存されます。URLを共有しても他の人からは見えません。READMEの手順でSupabaseを設定してください。
+  </div>
+  <div class="card">
+    <h2>新しいイベントを作成</h2>
+    <label>イベント名</label>
+    <input type="text" id="new-event-name" placeholder="例：沖縄旅行、麻雀大会">
+    <label>メンバー（2人以上）</label>
+    <div id="home-members"></div>
+    <button class="btn-small" id="btn-add-member-input">＋ メンバー欄を追加</button>
+    <button class="btn-primary" id="btn-create-event">イベントを作成してURLを発行</button>
+  </div>
+  <div class="card">
+    <h2>このアプリについて</h2>
+    <p style="font-size:13.5px;color:var(--sub)">
+      イベントごとにURLを発行し、URLを知っているメンバー全員が記録・閲覧できます。<br><br>
+      📘 <b>立替</b>：誰かがまとめて支払い → 対象者で割り勘<br>
+      🤝 <b>貸し借り</b>：個人間の金銭の貸し借り<br>
+      🎲 <b>勝ち負け</b>：麻雀などの勝ち負け（合計±0）<br><br>
+      すべて合算して「誰が誰にいくら払えばいいか」を最少回数で精算します。
+    </p>
+  </div>
+</div>
+
+<!-- ============ EVENT (メイン画面) ============ -->
+<div class="container hidden" id="view-event">
+  <div id="local-notice2" class="notice hidden">⚠️ デモモード：データはこの端末のみに保存されています。</div>
+  <div class="share-bar card" style="padding:10px;align-items:center">
+    <input type="text" id="share-url" readonly>
+    <button class="btn-small" id="btn-copy">URLをコピー</button>
+  </div>
+
+  <!-- 記録一覧タブ -->
+  <div id="tab-list">
+    <div class="chips" id="filter-chips">
+      <button class="chip active" data-f="all">すべて</button>
+      <button class="chip" data-f="tatekae">📘 立替</button>
+      <button class="chip" data-f="loan">🤝 貸し借り</button>
+      <button class="chip" data-f="gamble">🎲 勝ち負け</button>
+    </div>
+    <div class="sort-bar">
+      <select id="sort-select">
+        <option value="new">新しい順</option>
+        <option value="old">古い順</option>
+        <option value="amount">金額が大きい順</option>
+      </select>
+    </div>
+    <div class="card" id="tx-list"></div>
+  </div>
+
+  <!-- 追加タブ -->
+  <div id="tab-add" class="hidden">
+    <div class="card">
+      <div class="seg" id="cat-seg">
+        <button data-cat="tatekae" class="active">📘 立替</button>
+        <button data-cat="loan">🤝 貸し借り</button>
+        <button data-cat="gamble">🎲 勝ち負け</button>
+      </div>
+
+      <div id="form-tatekae">
+        <label>内容</label>
+        <input type="text" id="t-title" placeholder="例：レンタカー代、夕食代">
+        <label>支払った人</label>
+        <select id="t-payer"></select>
+        <label>金額（円）</label>
+        <input type="number" id="t-amount" placeholder="10000" inputmode="numeric">
+        <label>割り勘の対象者</label>
+        <div class="member-check" id="t-targets"></div>
+      </div>
+
+      <div id="form-loan" class="hidden">
+        <label>内容（任意）</label>
+        <input type="text" id="l-title" placeholder="例：立て替え分、現金貸し">
+        <label>貸した人（受け取る側）</label>
+        <select id="l-from"></select>
+        <label>借りた人（払う側）</label>
+        <select id="l-to"></select>
+        <label>金額（円）</label>
+        <input type="number" id="l-amount" placeholder="5000" inputmode="numeric">
+      </div>
+
+      <div id="form-gamble" class="hidden">
+        <label>内容</label>
+        <input type="text" id="g-title" placeholder="例：麻雀1回戦、ポーカー">
+        <label>各メンバーの収支（勝ち＝＋／負け＝−を選んで金額を入力。合計が0になるように）</label>
+        <div id="g-rows"></div>
+        <div class="gamble-sum" id="g-sum">合計：0円</div>
+      </div>
+
+      <button class="btn-primary" id="btn-save-tx">記録する</button>
+    </div>
+  </div>
+
+  <!-- 精算タブ -->
+  <div id="tab-settle" class="hidden">
+    <div class="card">
+      <h2>💰 精算方法（最少回数）</h2>
+      <div id="settle-list"></div>
+    </div>
+    <div class="card">
+      <h2>📊 各メンバーの収支</h2>
+      <div id="balance-list"></div>
+    </div>
+  </div>
+
+  <!-- メンバータブ -->
+  <div id="tab-members" class="hidden">
+    <div class="card">
+      <h2>👥 メンバー</h2>
+      <div id="member-list"></div>
+      <div class="add-member-row">
+        <input type="text" id="new-member-name" placeholder="名前">
+        <button class="btn-small" id="btn-add-member">追加</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="list" class="active"><span class="ic">📋</span>記録</button>
+    <button data-tab="add"><span class="ic">➕</span>追加</button>
+    <button data-tab="settle"><span class="ic">💰</span>精算</button>
+    <button data-tab="members"><span class="ic">👥</span>メンバー</button>
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   設定：Supabaseのプロジェクト情報をここに貼り付けてください。
+   空のままの場合は「デモモード」（この端末のみ保存）で動作します。
+   ================================================================ */
+const SUPABASE_URL = "https://kmzatbbxemsptekdkhtw.supabase.co/rest/v1/";       // 例: "https://xxxx.supabase.co"
+const SUPABASE_ANON_KEY = "sb_publishable_U78MtNpJfQJ3fmElonM5XA_-zqOUu5Y";  // 例: "eyJhbGciOi..."
+
+/* ---------------- ユーティリティ ---------------- */
+const $ = (id) => document.getElementById(id);
+const yen = (n) => "¥" + Math.abs(n).toLocaleString();
+const CAT_LABEL = { tatekae: "📘 立替", loan: "🤝 貸し借り", gamble: "🎲 勝ち負け" };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); }));
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),2000); }
+
+/* ---------------- 精算最適化 ----------------
+   balances: [{id, name, bal}]  bal>0=受け取る, bal<0=支払う
+   貪欲法：最大の債務者→最大の債権者へ順に送金 */
+function settle(balances){
+  const debtors = balances.filter(b=>b.bal<0).map(b=>({...b})).sort((a,b)=>a.bal-b.bal);
+  const creditors = balances.filter(b=>b.bal>0).map(b=>({...b})).sort((a,b)=>b.bal-a.bal);
+  const res=[]; let i=0, j=0;
+  while(i<debtors.length && j<creditors.length){
+    const pay = Math.min(-debtors[i].bal, creditors[j].bal);
+    if(pay>0) res.push({from:debtors[i].name, to:creditors[j].name, amount:pay});
+    debtors[i].bal += pay; creditors[j].bal -= pay;
+    if(debtors[i].bal===0) i++;
+    if(creditors[j].bal===0) j++;
+  }
+  return res;
+}
+
+/* 立替の分割：端数は先頭の対象者から1円ずつ負担。
+   支払者の行(+amount)と各対象者の行(-負担額)を別々に持つ
+   （支払者自身が対象者でも合算しない＝一覧表示で対象者に含めるため）。
+   残高計算はメンバーごとに合計するので重複行があっても問題なし */
+function splitTatekae(amount, payerId, targetIds){
+  const n = targetIds.length;
+  const base = Math.floor(amount/n), rem = amount - base*n;
+  const lines = targetIds.map((id,idx)=>({member_id:id, delta:-(base + (idx<rem?1:0))}));
+  lines.push({member_id:payerId, delta:amount});
+  return lines;
+}
+
+/* ---------------- データ層 ---------------- */
+const useSupabase = SUPABASE_URL && SUPABASE_ANON_KEY;
+let sb = null;
+if (useSupabase) sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const LocalStore = {
+  _load(){ try{ return JSON.parse(localStorage.getItem("warikan_db")||"{}"); }catch(e){ return {}; } },
+  _save(db){ localStorage.setItem("warikan_db", JSON.stringify(db)); },
+  async createEvent(name, memberNames){
+    const db=this._load(); const id=uuid();
+    db[id]={ event:{id,name}, members:memberNames.map(n=>({id:uuid(),name:n})), transactions:[] };
+    this._save(db); return id;
+  },
+  async getEvent(id){ const db=this._load(); return db[id]?db[id].event:null; },
+  async listMembers(eid){ const db=this._load(); return db[eid]?db[eid].members:[]; },
+  async addMember(eid,name){ const db=this._load(); const m={id:uuid(),name};
+    db[eid].members.push(m); this._save(db); return m; },
+  async listTransactions(eid){ const db=this._load(); return db[eid]?db[eid].transactions:[]; },
+  async addTransaction(eid,tx){ const db=this._load();
+    tx.id=uuid(); tx.created_at=new Date().toISOString();
+    db[eid].transactions.push(tx); this._save(db); return tx; },
+  async deleteTransaction(eid,txId){ const db=this._load();
+    db[eid].transactions=db[eid].transactions.filter(t=>t.id!==txId); this._save(db); },
+};
+
+const SupabaseStore = {
+  async createEvent(name, memberNames){
+    const {data:ev,error:e1}=await sb.from("events").insert({name}).select().single();
+    if(e1) throw e1;
+    const {error:e2}=await sb.from("members").insert(memberNames.map(n=>({event_id:ev.id,name:n})));
+    if(e2) throw e2;
+    return ev.id;
+  },
+  async getEvent(id){ const {data}=await sb.from("events").select().eq("id",id).maybeSingle(); return data; },
+  async listMembers(eid){ const {data,error}=await sb.from("members").select().eq("event_id",eid).order("created_at");
+    if(error) throw error; return data; },
+  async addMember(eid,name){ const {data,error}=await sb.from("members").insert({event_id:eid,name}).select().single();
+    if(error) throw error; return data; },
+  async listTransactions(eid){ const {data,error}=await sb.from("transactions").select().eq("event_id",eid).order("created_at");
+    if(error) throw error; return data; },
+  async addTransaction(eid,tx){ const {data,error}=await sb.from("transactions").insert({event_id:eid,...tx}).select().single();
+    if(error) throw error; return data; },
+  async deleteTransaction(eid,txId){ const {error}=await sb.from("transactions").delete().eq("id",txId);
+    if(error) throw error; },
+};
+
+const store = useSupabase ? SupabaseStore : LocalStore;
+
+/* ---------------- 状態 ---------------- */
+let eventId=null, members=[], transactions=[];
+let currentFilter="all", currentSort="new", currentCat="tatekae";
+const memberName = (id)=>{ const m=members.find(m=>m.id===id); return m?m.name:"?"; };
+
+/* ---------------- 画面遷移 ---------------- */
+async function init(){
+  if(!useSupabase){ $("local-notice").classList.remove("hidden"); $("local-notice2").classList.remove("hidden"); }
+  const params=new URLSearchParams(location.search);
+  eventId=params.get("e");
+  if(eventId){
+    const ev=await store.getEvent(eventId);
+    if(!ev){ toast("イベントが見つかりません"); eventId=null; showHome(); return; }
+    $("header-event").textContent=ev.name; $("header-event").style.display="block";
+    $("view-event").classList.remove("hidden");
+    $("share-url").value=location.href;
+    await refresh();
+  } else showHome();
+}
+function showHome(){
+  $("view-home").classList.remove("hidden");
+  addHomeMemberInput(); addHomeMemberInput(); // 初期2枠
+}
+
+async function refresh(){
+  [members, transactions] = await Promise.all([
+    store.listMembers(eventId), store.listTransactions(eventId)]);
+  renderAll();
+}
+function renderAll(){ renderTxList(); renderAddForm(); renderSettle(); renderMembers(); }
+
+/* ---------------- ホーム：イベント作成 ---------------- */
+function addHomeMemberInput(){
+  const div=document.createElement("div"); div.className="home-member-row";
+  div.innerHTML='<input type="text" placeholder="名前"><button type="button">✕</button>';
+  div.querySelector("button").onclick=()=>div.remove();
+  $("home-members").appendChild(div);
+}
+$("btn-add-member-input").onclick=addHomeMemberInput;
+$("btn-create-event").onclick=async ()=>{
+  const name=$("new-event-name").value.trim();
+  const names=[...$("home-members").querySelectorAll("input")].map(i=>i.value.trim()).filter(Boolean);
+  if(!name) return toast("イベント名を入力してください");
+  if(names.length<2) return toast("メンバーを2人以上入力してください");
+  if(new Set(names).size!==names.length) return toast("同じ名前は使えません");
+  $("btn-create-event").disabled=true;
+  try{
+    const id=await store.createEvent(name,names);
+    location.href=location.pathname+"?e="+id;
+  }catch(err){ console.error(err); toast("作成に失敗しました: "+err.message); $("btn-create-event").disabled=false; }
+};
+
+/* ---------------- 記録一覧 ---------------- */
+$("filter-chips").addEventListener("click",(e)=>{
+  const b=e.target.closest(".chip"); if(!b) return;
+  currentFilter=b.dataset.f;
+  [...$("filter-chips").children].forEach(c=>c.classList.toggle("active",c===b));
+  renderTxList();
+});
+$("sort-select").onchange=(e)=>{ currentSort=e.target.value; renderTxList(); };
+
+function txSummary(tx){
+  if(tx.category==="tatekae"){
+    const targets=tx.lines.filter(l=>l.delta<0).map(l=>memberName(l.member_id));
+    return `${memberName(tx.payer_id)} が立替 → ${targets.join("、")}`;
+  }
+  if(tx.category==="loan"){
+    const from=tx.lines.find(l=>l.delta>0), to=tx.lines.find(l=>l.delta<0);
+    return `${memberName(from.member_id)} が ${memberName(to.member_id)} に貸し`;
+  }
+  return tx.lines.map(l=>`${memberName(l.member_id)} ${l.delta>0?"+":""}${l.delta.toLocaleString()}`).join(" / ");
+}
+function renderTxList(){
+  let list=transactions.filter(t=>currentFilter==="all"||t.category===currentFilter);
+  if(currentSort==="new") list=[...list].reverse();
+  else if(currentSort==="amount") list=[...list].sort((a,b)=>b.amount-a.amount);
+  const el=$("tx-list");
+  if(list.length===0){ el.innerHTML='<div class="empty">まだ記録がありません。<br>「追加」タブから記録しましょう。</div>'; return; }
+  el.innerHTML=list.map(tx=>`
+    <div class="tx-item">
+      <div style="flex:1;min-width:0">
+        <span class="badge ${tx.category}">${CAT_LABEL[tx.category]}</span>
+        <div class="tx-title">${esc(tx.title||"（内容なし）")}</div>
+        <div class="tx-sub">${esc(txSummary(tx))}</div>
+      </div>
+      <div>
+        <div class="tx-amount">${yen(tx.amount)}</div>
+        <div style="text-align:right;margin-top:6px">
+          <button class="btn-danger-sm" onclick="delTx('${tx.id}')">削除</button>
+        </div>
+      </div>
+    </div>`).join("");
+}
+function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+window.delTx=async (id)=>{
+  if(!confirm("この記録を削除しますか？")) return;
+  await store.deleteTransaction(eventId,id);
+  await refresh(); toast("削除しました");
+};
+
+/* ---------------- 追加フォーム ---------------- */
+$("cat-seg").addEventListener("click",(e)=>{
+  const b=e.target.closest("button"); if(!b) return;
+  currentCat=b.dataset.cat;
+  [...$("cat-seg").children].forEach(c=>c.classList.toggle("active",c===b));
+  $("form-tatekae").classList.toggle("hidden",currentCat!=="tatekae");
+  $("form-loan").classList.toggle("hidden",currentCat!=="loan");
+  $("form-gamble").classList.toggle("hidden",currentCat!=="gamble");
+});
+function renderAddForm(){
+  const opts=members.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join("");
+  $("t-payer").innerHTML=opts; $("l-from").innerHTML=opts; $("l-to").innerHTML=opts;
+  if(members.length>1) $("l-to").selectedIndex=1;
+  $("t-targets").innerHTML=members.map(m=>
+    `<label><input type="checkbox" value="${m.id}" checked>${esc(m.name)}</label>`).join("");
+  $("g-rows").innerHTML=members.map(m=>`
+    <div class="gamble-row">
+      <div class="gname">${esc(m.name)}</div>
+      <div class="sign-toggle">
+        <button type="button" data-s="1" class="active">＋</button>
+        <button type="button" data-s="-1">−</button>
+      </div>
+      <input type="text" data-mid="${m.id}" placeholder="0" inputmode="numeric" class="g-input">
+    </div>`).join("");
+  [...document.querySelectorAll(".g-input")].forEach(i=>i.oninput=()=>{
+    i.value=i.value.replace(/[^0-9０-９]/g,"").replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+    updateGambleSum();
+  });
+  [...document.querySelectorAll(".sign-toggle button")].forEach(b=>b.onclick=()=>{
+    [...b.parentElement.children].forEach(c=>c.classList.toggle("active",c===b));
+    updateGambleSum();
+  });
+  updateGambleSum();
+}
+function gambleLines(){
+  return [...document.querySelectorAll(".gamble-row")].map(row=>{
+    const input=row.querySelector(".g-input");
+    const sign=parseInt(row.querySelector(".sign-toggle .active").dataset.s);
+    return {member_id:input.dataset.mid, delta:sign*(parseInt(input.value)||0)};
+  }).filter(l=>l.delta!==0);
+}
+function updateGambleSum(){
+  const sum=gambleLines().reduce((s,l)=>s+l.delta,0);
+  const el=$("g-sum");
+  el.textContent="合計："+sum.toLocaleString()+"円"+(sum===0?" ✅":" （0にしてください）");
+  el.style.color=sum===0?"var(--plus)":"var(--minus)";
+}
+$("btn-save-tx").onclick=async ()=>{
+  let tx=null;
+  try{
+    if(currentCat==="tatekae"){
+      const title=$("t-title").value.trim(), payer=$("t-payer").value,
+            amount=parseInt($("t-amount").value),
+            targets=[...$("t-targets").querySelectorAll("input:checked")].map(i=>i.value);
+      if(!title) return toast("内容を入力してください");
+      if(!amount||amount<=0) return toast("金額を入力してください");
+      if(targets.length===0) return toast("対象者を選んでください");
+      tx={category:"tatekae",title,payer_id:payer,amount,lines:splitTatekae(amount,payer,targets)};
+    }else if(currentCat==="loan"){
+      const title=$("l-title").value.trim()||"貸し借り",
+            from=$("l-from").value, to=$("l-to").value,
+            amount=parseInt($("l-amount").value);
+      if(from===to) return toast("貸した人と借りた人が同じです");
+      if(!amount||amount<=0) return toast("金額を入力してください");
+      tx={category:"loan",title,payer_id:from,amount,
+          lines:[{member_id:from,delta:amount},{member_id:to,delta:-amount}]};
+    }else{
+      const title=$("g-title").value.trim();
+      if(!title) return toast("内容を入力してください");
+      const lines=gambleLines();
+      if(lines.length===0) return toast("収支を入力してください");
+      const sum=lines.reduce((s,l)=>s+l.delta,0);
+      if(sum!==0) return toast("合計が0になっていません（現在 "+sum.toLocaleString()+"円）");
+      const amount=lines.filter(l=>l.delta>0).reduce((s,l)=>s+l.delta,0);
+      tx={category:"gamble",title,payer_id:null,amount,lines};
+    }
+    $("btn-save-tx").disabled=true;
+    await store.addTransaction(eventId,tx);
+    await refresh();
+    // フォームリセット
+    ["t-title","t-amount","l-title","l-amount","g-title"].forEach(id=>$(id).value="");
+    toast("記録しました");
+    switchTab("list");
+  }catch(err){ console.error(err); toast("保存に失敗しました: "+err.message); }
+  finally{ $("btn-save-tx").disabled=false; }
+};
+
+/* ---------------- 精算 ---------------- */
+function calcBalances(){
+  const bal={}; members.forEach(m=>bal[m.id]=0);
+  transactions.forEach(tx=>tx.lines.forEach(l=>{ bal[l.member_id]=(bal[l.member_id]||0)+l.delta; }));
+  return members.map(m=>({id:m.id,name:m.name,bal:bal[m.id]||0}));
+}
+function renderSettle(){
+  const balances=calcBalances();
+  $("balance-list").innerHTML=balances.map(b=>`
+    <div class="balance-row">
+      <span>${esc(b.name)}</span>
+      <span class="${b.bal>0?'plus':b.bal<0?'minus':''}">
+        ${b.bal>0?"+":""}${b.bal.toLocaleString()}円 ${b.bal>0?"（受け取る）":b.bal<0?"（支払う）":""}
+      </span>
+    </div>`).join("");
+  const plan=settle(balances);
+  $("settle-list").innerHTML=plan.length===0
+    ? '<div class="empty">精算の必要はありません 🎉</div>'
+    : plan.map(p=>`
+      <div class="settle-row">
+        <span>${esc(p.from)}<span class="arrow">→</span>${esc(p.to)}</span>
+        <span class="amt">${yen(p.amount)}</span>
+      </div>`).join("");
+}
+
+/* ---------------- メンバー ---------------- */
+function renderMembers(){
+  $("member-list").innerHTML=members.map(m=>
+    `<div class="member-list-item"><span>${esc(m.name)}</span></div>`).join("");
+}
+$("btn-add-member").onclick=async ()=>{
+  const name=$("new-member-name").value.trim();
+  if(!name) return toast("名前を入力してください");
+  if(members.some(m=>m.name===name)) return toast("同じ名前のメンバーがいます");
+  await store.addMember(eventId,name);
+  $("new-member-name").value="";
+  await refresh(); toast("メンバーを追加しました");
+};
+
+/* ---------------- タブ ---------------- */
+function switchTab(tab){
+  ["list","add","settle","members"].forEach(t=>{
+    $("tab-"+t).classList.toggle("hidden",t!==tab);
+  });
+  [...document.querySelectorAll(".tabs button")].forEach(b=>
+    b.classList.toggle("active",b.dataset.tab===tab));
+  if(tab==="settle") renderSettle();
+}
+document.querySelector(".tabs").addEventListener("click",(e)=>{
+  const b=e.target.closest("button"); if(!b) return;
+  switchTab(b.dataset.tab);
+});
+$("btn-copy").onclick=async ()=>{
+  try{ await navigator.clipboard.writeText($("share-url").value); toast("URLをコピーしました"); }
+  catch(e){ $("share-url").select(); document.execCommand("copy"); toast("URLをコピーしました"); }
+};
+
+/* 他の人の更新を取り込む：画面復帰時に再読込 */
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden && eventId) refresh();
+});
+
+init();
+</script>
+</body>
+</html>
