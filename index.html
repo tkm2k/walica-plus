@@ -297,23 +297,39 @@ const LocalStore = {
 
 const SupabaseStore = {
   async createEvent(name, memberNames){
-    const {data:ev,error:e1}=await sb.from("events").insert({name}).select().single();
-    if(e1) throw e1;
-    const {error:e2}=await sb.from("members").insert(memberNames.map(n=>({event_id:ev.id,name:n})));
-    if(e2) throw e2;
-    return ev.id;
+    const {data,error}=await sb.rpc("create_event",{p_name:name,p_members:memberNames});
+    if(error) throw error;
+    return data;
   },
-  async getEvent(id){ const {data}=await sb.from("events").select().eq("id",id).maybeSingle(); return data; },
-  async listMembers(eid){ const {data,error}=await sb.from("members").select().eq("event_id",eid).order("created_at");
-    if(error) throw error; return data; },
-  async addMember(eid,name){ const {data,error}=await sb.from("members").insert({event_id:eid,name}).select().single();
-    if(error) throw error; return data; },
-  async listTransactions(eid){ const {data,error}=await sb.from("transactions").select().eq("event_id",eid).order("created_at");
-    if(error) throw error; return data; },
-  async addTransaction(eid,tx){ const {data,error}=await sb.from("transactions").insert({event_id:eid,...tx}).select().single();
-    if(error) throw error; return data; },
-  async deleteTransaction(eid,txId){ const {error}=await sb.from("transactions").delete().eq("id",txId);
-    if(error) throw error; },
+  async getEvent(id){
+    try{
+      const {data,error}=await sb.rpc("get_event",{p_event_id:id});
+      if(error) return null;
+      return data;
+    }catch(e){ return null; }
+  },
+  async listMembers(eid){
+    const {data,error}=await sb.rpc("list_members",{p_event_id:eid});
+    if(error) throw error; return data||[];
+  },
+  async addMember(eid,name){
+    const {data,error}=await sb.rpc("add_member",{p_event_id:eid,p_name:name});
+    if(error) throw error; return data;
+  },
+  async listTransactions(eid){
+    const {data,error}=await sb.rpc("list_transactions",{p_event_id:eid});
+    if(error) throw error; return data||[];
+  },
+  async addTransaction(eid,tx){
+    const {data,error}=await sb.rpc("add_transaction",{p_event_id:eid,
+      p_category:tx.category, p_title:tx.title,
+      p_payer_id:tx.payer_id, p_amount:tx.amount, p_lines:tx.lines});
+    if(error) throw error; return data;
+  },
+  async deleteTransaction(eid,txId){
+    const {error}=await sb.rpc("delete_transaction",{p_event_id:eid,p_tx_id:txId});
+    if(error) throw error;
+  },
 };
 
 const store = useSupabase ? SupabaseStore : LocalStore;
