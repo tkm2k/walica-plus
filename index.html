@@ -195,10 +195,17 @@
   <div id="tab-settle" class="hidden">
     <div class="card">
       <h2>💰 精算方法（最少回数）</h2>
+      <div class="tx-sub" style="margin:-6px 0 8px">※すべての取引を合算した結果です</div>
       <div id="settle-list"></div>
     </div>
     <div class="card">
       <h2>📊 各メンバーの収支</h2>
+      <div class="chips" id="settle-chips" style="margin-top:6px">
+        <button class="chip active" data-f="all">すべて</button>
+        <button class="chip" data-f="tatekae">📘 立替</button>
+        <button class="chip" data-f="loan">🤝 貸し借り</button>
+        <button class="chip" data-f="gamble">🎲 勝ち負け</button>
+      </div>
       <div id="balance-list"></div>
     </div>
   </div>
@@ -522,14 +529,17 @@ $("btn-save-tx").onclick=async ()=>{
 };
 
 /* ---------------- 精算 ---------------- */
-function calcBalances(){
+let settleFilter="all";
+function calcBalances(filter="all"){
   const bal={}; members.forEach(m=>bal[m.id]=0);
-  transactions.forEach(tx=>tx.lines.forEach(l=>{ bal[l.member_id]=(bal[l.member_id]||0)+l.delta; }));
+  transactions.filter(t=>filter==="all"||t.category===filter)
+    .forEach(tx=>tx.lines.forEach(l=>{ bal[l.member_id]=(bal[l.member_id]||0)+l.delta; }));
   return members.map(m=>({id:m.id,name:m.name,bal:bal[m.id]||0}));
 }
 function renderSettle(){
-  const balances=calcBalances();
-  $("balance-list").innerHTML=balances.map(b=>`
+  const balances=calcBalances();               // 精算方法用（常に全取引）
+  const fBalances=calcBalances(settleFilter);  // 収支表示用（フィルタ適用）
+  $("balance-list").innerHTML=fBalances.map(b=>`
     <div class="balance-row">
       <span>${esc(b.name)}</span>
       <span class="${b.bal>0?'plus':b.bal<0?'minus':''}">
@@ -545,6 +555,12 @@ function renderSettle(){
         <span class="amt">${yen(p.amount)}</span>
       </div>`).join("");
 }
+$("settle-chips").addEventListener("click",(e)=>{
+  const b=e.target.closest(".chip"); if(!b) return;
+  settleFilter=b.dataset.f;
+  [...$("settle-chips").children].forEach(c=>c.classList.toggle("active",c===b));
+  renderSettle();
+});
 
 /* ---------------- メンバー ---------------- */
 function renderMembers(){
