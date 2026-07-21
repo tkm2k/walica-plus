@@ -294,6 +294,8 @@ const LocalStore = {
   async listMembers(eid){ const db=this._load(); return db[eid]?db[eid].members:[]; },
   async addMember(eid,name){ const db=this._load(); const m={id:uuid(),name};
     db[eid].members.push(m); this._save(db); return m; },
+  async renameMember(eid,mid,name){ const db=this._load();
+    const m=db[eid].members.find(m=>m.id===mid); if(m) m.name=name; this._save(db); },
   async listTransactions(eid){ const db=this._load(); return db[eid]?db[eid].transactions:[]; },
   async addTransaction(eid,tx){ const db=this._load();
     tx.id=uuid(); tx.created_at=new Date().toISOString();
@@ -322,6 +324,10 @@ const SupabaseStore = {
   async addMember(eid,name){
     const {data,error}=await sb.rpc("add_member",{p_event_id:eid,p_name:name});
     if(error) throw error; return data;
+  },
+  async renameMember(eid,mid,name){
+    const {error}=await sb.rpc("rename_member",{p_event_id:eid,p_member_id:mid,p_name:name});
+    if(error) throw error;
   },
   async listTransactions(eid){
     const {data,error}=await sb.rpc("list_transactions",{p_event_id:eid});
@@ -565,8 +571,22 @@ $("settle-chips").addEventListener("click",(e)=>{
 /* ---------------- メンバー ---------------- */
 function renderMembers(){
   $("member-list").innerHTML=members.map(m=>
-    `<div class="member-list-item"><span>${esc(m.name)}</span></div>`).join("");
+    `<div class="member-list-item"><span>${esc(m.name)}</span>
+      <button class="btn-small" onclick="editMember('${m.id}')">✏️ 編集</button></div>`).join("");
 }
+window.editMember=async (id)=>{
+  const m=members.find(m=>m.id===id); if(!m) return;
+  const name=prompt("新しい名前を入力してください", m.name);
+  if(name===null) return;  // キャンセル
+  const trimmed=name.trim();
+  if(!trimmed) return toast("名前を入力してください");
+  if(trimmed===m.name) return;
+  if(members.some(x=>x.name===trimmed)) return toast("同じ名前のメンバーがいます");
+  try{
+    await store.renameMember(eventId,id,trimmed);
+    await refresh(); toast("名前を変更しました");
+  }catch(err){ console.error(err); toast("変更に失敗しました: "+err.message); }
+};
 $("btn-add-member").onclick=async ()=>{
   const name=$("new-member-name").value.trim();
   if(!name) return toast("名前を入力してください");
