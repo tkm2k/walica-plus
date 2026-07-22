@@ -188,6 +188,10 @@
       </div>
 
       <button class="btn-primary" id="btn-save-tx">記録する</button>
+      <div id="edit-actions" class="hidden" style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-small" id="btn-cancel-edit" style="flex:1;padding:11px">キャンセル</button>
+        <button class="btn-danger-sm" id="btn-delete-edit" style="flex:1;padding:11px;font-size:14px">🗑 この記録を削除</button>
+      </div>
     </div>
   </div>
 
@@ -300,6 +304,10 @@ const LocalStore = {
   async addTransaction(eid,tx){ const db=this._load();
     tx.id=uuid(); tx.created_at=new Date().toISOString();
     db[eid].transactions.push(tx); this._save(db); return tx; },
+  async updateTransaction(eid,txId,tx){ const db=this._load();
+    const i=db[eid].transactions.findIndex(t=>t.id===txId);
+    if(i>=0) db[eid].transactions[i]={...db[eid].transactions[i],...tx};
+    this._save(db); },
   async deleteTransaction(eid,txId){ const db=this._load();
     db[eid].transactions=db[eid].transactions.filter(t=>t.id!==txId); this._save(db); },
 };
@@ -339,6 +347,12 @@ const SupabaseStore = {
       p_payer_id:tx.payer_id, p_amount:tx.amount, p_lines:tx.lines});
     if(error) throw error; return data;
   },
+  async updateTransaction(eid,txId,tx){
+    const {error}=await sb.rpc("update_transaction",{p_event_id:eid,p_tx_id:txId,
+      p_category:tx.category, p_title:tx.title,
+      p_payer_id:tx.payer_id, p_amount:tx.amount, p_lines:tx.lines});
+    if(error) throw error;
+  },
   async deleteTransaction(eid,txId){
     const {error}=await sb.rpc("delete_transaction",{p_event_id:eid,p_tx_id:txId});
     if(error) throw error;
@@ -350,6 +364,7 @@ const store = useSupabase ? SupabaseStore : LocalStore;
 /* ---------------- 状態 ---------------- */
 let eventId=null, members=[], transactions=[];
 let currentFilter="all", currentSort="new", currentCat="tatekae";
+let editingTxId=null;
 const memberName = (id)=>{ const m=members.find(m=>m.id===id); return m?m.name:"?"; };
 
 /* ---------------- 画面遷移 ---------------- */
@@ -435,16 +450,71 @@ function renderTxList(){
       <div>
         <div class="tx-amount">${yen(tx.amount)}</div>
         <div style="text-align:right;margin-top:6px">
-          <button class="btn-danger-sm" onclick="delTx('${tx.id}')">削除</button>
+          <button class="btn-small" onclick="editTx('${tx.id}')">✏️ 編集</button>
         </div>
       </div>
     </div>`).join("");
 }
 function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
-window.delTx=async (id)=>{
+window.editTx=(id)=>{
+  const tx=transactions.find(t=>t.id===id); if(!tx) return;
+  editingTxId=id;
+  // カテゴリを記録に合わせて固定（編集中は変更不可）
+  currentCat=tx.category;
+  [...$("cat-seg").children].forEach(c=>{
+    c.classList.toggle("active",c.dataset.cat===tx.category);
+    c.disabled=(c.dataset.cat!==tx.category);
+    c.style.opacity=(c.dataset.cat===tx.category)?"1":".35";
+  });
+  $("form-tatekae").classList.toggle("hidden",tx.category!=="tatekae");
+  $("form-loan").classList.toggle("hidden",tx.category!=="loan");
+  $("form-gamble").classList.toggle("hidden",tx.category!=="gamble");
+  // 既存の内容をフォームに反映
+  if(tx.category==="tatekae"){
+    $("t-title").value=tx.title||"";
+    if(tx.payer_id) $("t-payer").value=tx.payer_id;
+    $("t-amount").value=tx.amount;
+    const targets=new Set(tx.lines.filter(l=>l.delta<0).map(l=>l.member_id));
+    [...$("t-targets").querySelectorAll("input")].forEach(i=>i.checked=targets.has(i.value));
+  }else if(tx.category==="loan"){
+    $("l-title").value=tx.title||"";
+    const from=tx.lines.find(l=>l.delta>0), to=tx.lines.find(l=>l.delta<0);
+    if(from) $("l-from").value=from.member_id;
+    if(to) $("l-to").value=to.member_id;
+    $("l-amount").value=tx.amount;
+  }else{
+    $("g-title").value=tx.title||"";
+    const map={}; tx.lines.forEach(l=>map[l.member_id]=l.delta);
+    [...document.querySelectorAll(".gamble-row")].forEach(row=>{
+      const input=row.querySelector(".g-input"); const delta=map[input.dataset.mid]||0;
+      input.value=delta?String(Math.abs(delta)):"";
+      const sign=delta<0?-1:1;
+      [...row.querySelectorAll(".sign-toggle button")].forEach(b=>
+        b.classList.toggle("active",parseInt(b.dataset.s)===sign));
+    });
+    updateGambleSum();
+  }
+  $("btn-save-tx").textContent="更新する";
+  $("edit-actions").classList.remove("hidden");
+  switchTab("add");
+};
+function exitEditMode(){
+  editingTxId=null;
+  [...$("cat-seg").children].forEach(c=>{c.disabled=false;c.style.opacity="1";});
+  $("btn-save-tx").textContent="記録する";
+  $("edit-actions").classList.add("hidden");
+  ["t-title","t-amount","l-title","l-amount","g-title"].forEach(id=>$(id).value="");
+  renderAddForm();
+}
+$("btn-cancel-edit").onclick=()=>{ exitEditMode(); switchTab("list"); };
+$("btn-delete-edit").onclick=async ()=>{
+  if(!editingTxId) return;
   if(!confirm("この記録を削除しますか？")) return;
-  await store.deleteTransaction(eventId,id);
-  await refresh(); toast("削除しました");
+  try{
+    await store.deleteTransaction(eventId,editingTxId);
+    exitEditMode();
+    await refresh(); toast("削除しました"); switchTab("list");
+  }catch(err){ console.error(err); toast("削除に失敗しました: "+err.message); }
 };
 
 /* ---------------- 追加フォーム ---------------- */
@@ -524,11 +594,11 @@ $("btn-save-tx").onclick=async ()=>{
       tx={category:"gamble",title,payer_id:null,amount,lines};
     }
     $("btn-save-tx").disabled=true;
-    await store.addTransaction(eventId,tx);
+    if(editingTxId) await store.updateTransaction(eventId,editingTxId,tx);
+    else await store.addTransaction(eventId,tx);
+    toast(editingTxId?"更新しました":"記録しました");
     await refresh();
-    // フォームリセット
-    ["t-title","t-amount","l-title","l-amount","g-title"].forEach(id=>$(id).value="");
-    toast("記録しました");
+    exitEditMode();
     switchTab("list");
   }catch(err){ console.error(err); toast("保存に失敗しました: "+err.message); }
   finally{ $("btn-save-tx").disabled=false; }
@@ -607,6 +677,7 @@ function switchTab(tab){
 }
 document.querySelector(".tabs").addEventListener("click",(e)=>{
   const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.tab==="add" && editingTxId) exitEditMode();
   switchTab(b.dataset.tab);
 });
 $("btn-copy").onclick=async ()=>{
