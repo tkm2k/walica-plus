@@ -609,6 +609,7 @@ function calcBalances(filter="all"){
 function renderSettle(){
   const balances=calcBalances();               // 精算方法用（常に全取引）
   const fBalances=calcBalances(settleFilter);  // 収支表示用（フィルタ適用）
+  fBalances.sort((a,b)=>b.bal-a.bal);
   $("balance-list").innerHTML=fBalances.map(b=>`
     <div class="balance-row">
       <span>${esc(b.name)}</span>
