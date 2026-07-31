@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>ワリカンPlus - 割り勘・貸し借り・勝ち負け精算</title>
+<title>Walica Plus - 割り勘・貸し借り・勝ち負け精算</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -90,7 +90,7 @@
 <body>
 
 <header>
-  <h1 id="header-title">ワリカンPlus</h1>
+  <h1 id="header-title">Walica Plus</h1>
   <div class="event-name" id="header-event" style="display:none"></div>
 </header>
 
@@ -98,9 +98,6 @@
 
 <!-- ============ HOME (イベント作成) ============ -->
 <div class="container hidden" id="view-home">
-  <div id="local-notice" class="notice hidden">
-    ⚠️ <b>デモモード：</b>Supabase未設定のため、データはこの端末のブラウザ内にのみ保存されます。URLを共有しても他の人からは見えません。READMEの手順でSupabaseを設定してください。
-  </div>
   <div class="card">
     <h2>新しいイベントを作成</h2>
     <label>イベント名</label>
@@ -124,7 +121,6 @@
 
 <!-- ============ EVENT (メイン画面) ============ -->
 <div class="container hidden" id="view-event">
-  <div id="local-notice2" class="notice hidden">⚠️ デモモード：データはこの端末のみに保存されています。</div>
   <div class="share-bar card" style="padding:10px;align-items:center">
     <input type="text" id="share-url" readonly>
     <button class="btn-small" id="btn-copy">URLをコピー</button>
@@ -236,8 +232,7 @@
 
 <script>
 /* ================================================================
-   設定：Supabaseのプロジェクト情報をここに貼り付けてください。
-   空のままの場合は「デモモード」（この端末のみ保存）で動作します。
+   設定：Supabase接続情報
    ================================================================ */
 const SUPABASE_URL = "https://kmzatbbxemsptekdkhtw.supabase.co";       // 例: "https://xxxx.supabase.co"
 const SUPABASE_ANON_KEY = "sb_publishable_U78MtNpJfQJ3fmElonM5XA_-zqOUu5Y";  // 例: "eyJhbGciOi..."
@@ -369,7 +364,6 @@ const memberName = (id)=>{ const m=members.find(m=>m.id===id); return m?m.name:"
 
 /* ---------------- 画面遷移 ---------------- */
 async function init(){
-  if(!useSupabase){ $("local-notice").classList.remove("hidden"); $("local-notice2").classList.remove("hidden"); }
   const params=new URLSearchParams(location.search);
   eventId=params.get("e");
   if(eventId){
