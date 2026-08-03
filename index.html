@@ -183,6 +183,7 @@
         <div class="gamble-sum" id="g-sum">合計：0円</div>
       </div>
 
+      <div id="edit-created-at" class="hidden" style="font-size:12.5px;color:var(--sub);margin-bottom:10px"></div>
       <button class="btn-primary" id="btn-save-tx">記録する</button>
       <div id="edit-actions" class="hidden" style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-small" id="btn-cancel-edit" style="flex:1;padding:11px">キャンセル</button>
@@ -417,6 +418,15 @@ $("filter-chips").addEventListener("click",(e)=>{
 });
 $("sort-select").onchange=(e)=>{ currentSort=e.target.value; renderTxList(); };
 
+function fmtCreatedAt(iso,short){
+  if(!iso) return "";
+  const d=new Date(iso);
+  if(isNaN(d)) return "";
+  const mm=String(d.getMonth()+1).padStart(2,"0"), dd=String(d.getDate()).padStart(2,"0");
+  const hh=String(d.getHours()), mi=String(d.getMinutes()).padStart(2,"0");
+  if(short) return `(${mm}/${dd} ${hh}:${mi})`;
+  return `${d.getFullYear()}/${mm}/${dd} ${hh}:${mi}に作成`;
+}
 function txSummary(tx){
   if(tx.category==="tatekae"){
     const targets=tx.lines.filter(l=>l.delta<0).map(l=>memberName(l.member_id));
@@ -439,7 +449,7 @@ function renderTxList(){
       <div style="flex:1;min-width:0">
         <span class="badge ${tx.category}">${CAT_LABEL[tx.category]}</span>
         <div class="tx-title">${esc(tx.title||"（内容なし）")}</div>
-        <div class="tx-sub">${esc(txSummary(tx))}</div>
+        <div class="tx-sub">${esc(txSummary(tx))}　${fmtCreatedAt(tx.created_at,true)}</div>
       </div>
       <div>
         <div class="tx-amount">${yen(tx.amount)}</div>
@@ -489,6 +499,8 @@ window.editTx=(id)=>{
     updateGambleSum();
   }
   $("btn-save-tx").textContent="更新する";
+  const cAt=fmtCreatedAt(tx.created_at,false);
+  if(cAt){ $("edit-created-at").textContent=cAt; $("edit-created-at").classList.remove("hidden"); }
   $("edit-actions").classList.remove("hidden");
   switchTab("add");
 };
@@ -496,6 +508,7 @@ function exitEditMode(){
   editingTxId=null;
   [...$("cat-seg").children].forEach(c=>{c.disabled=false;c.style.opacity="1";});
   $("btn-save-tx").textContent="記録する";
+  $("edit-created-at").textContent=""; $("edit-created-at").classList.add("hidden");
   $("edit-actions").classList.add("hidden");
   ["t-title","t-amount","l-title","l-amount","g-title"].forEach(id=>$(id).value="");
   renderAddForm();
