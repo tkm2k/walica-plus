@@ -68,6 +68,10 @@
   .plus{color:var(--plus);font-weight:700} .minus{color:var(--minus);font-weight:700}
   .settle-row{display:flex;align-items:center;justify-content:space-between;padding:13px;background:#f0f9ff;border-radius:10px;margin-bottom:8px;font-weight:600}
   .settle-row .amt{font-weight:800;color:var(--primary)}
+  .share-actions{display:flex;gap:8px;margin-top:12px}
+  .share-actions button{flex:1;padding:11px;font-weight:700;border-radius:8px;font-size:14px}
+  .btn-copy-settle{background:#eef2ff;color:var(--primary)}
+  .btn-share-settle{background:var(--primary);color:#fff}
   .arrow{color:var(--sub);margin:0 8px}
   .empty{text-align:center;color:var(--sub);padding:30px 0;font-size:14px}
   .notice{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:12px}
@@ -85,6 +89,12 @@
   .home-member-row{display:flex;gap:8px;margin-bottom:8px}
   .home-member-row input{flex:1}
   .home-member-row button{flex:0 0 40px;background:#fee2e2;color:var(--danger);border-radius:8px}
+  .recent-item{display:flex;justify-content:space-between;align-items:center;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer}
+  .recent-item:last-child{border-bottom:none}
+  .recent-item:active{background:#f1f5f9;border-radius:6px}
+  .recent-name{font-weight:600;font-size:14px}
+  .recent-date{font-size:12px;color:var(--sub)}
+  .recent-remove{padding:4px 8px;background:none;color:var(--sub);font-size:16px}
   .app-footer{text-align:center;font-size:12px;color:var(--sub);padding:4px 0 10px}
 </style>
 </head>
@@ -117,6 +127,10 @@
       🎲 <b>勝ち負け</b>：麻雀などの勝ち負け（合計±0）<br><br>
       すべて合算して「誰が誰にいくら払えばいいか」を最少回数で精算します。
     </p>
+  </div>
+  <div class="card hidden" id="recent-events-card">
+    <h2>最近のイベント</h2>
+    <div id="recent-events-list"></div>
   </div>
   <div class="app-footer">🔒 記録はこのURLを知っているメンバーとサーバー管理者だけが見られます</div>
 </div>
@@ -161,7 +175,7 @@
         <label>支払った人</label>
         <select id="t-payer"></select>
         <label>金額（円）</label>
-        <input type="number" id="t-amount" placeholder="10000" inputmode="numeric">
+        <input type="text" id="t-amount" placeholder="10000" inputmode="numeric">
         <label>割り勘の対象者</label>
         <div class="member-check" id="t-targets"></div>
       </div>
@@ -174,7 +188,7 @@
         <label>借りた人（払う側）</label>
         <select id="l-to"></select>
         <label>金額（円）</label>
-        <input type="number" id="l-amount" placeholder="5000" inputmode="numeric">
+        <input type="text" id="l-amount" placeholder="5000" inputmode="numeric">
       </div>
 
       <div id="form-gamble" class="hidden">
@@ -200,6 +214,10 @@
       <h2>💰 精算方法（最少回数）</h2>
       <div class="tx-sub" style="margin:-6px 0 8px">※すべての取引を合算した結果です</div>
       <div id="settle-list"></div>
+      <div class="share-actions">
+        <button class="btn-copy-settle" id="btn-copy-settle">📋 テキストをコピー</button>
+        <button class="btn-share-settle hidden" id="btn-share-settle">📤 共有する</button>
+      </div>
     </div>
     <div class="card">
       <h2>📊 各メンバーの収支</h2>
@@ -246,6 +264,49 @@ const SUPABASE_ANON_KEY = "sb_publishable_U78MtNpJfQJ3fmElonM5XA_-zqOUu5Y";  // 
 /* ---------------- ユーティリティ ---------------- */
 const $ = (id) => document.getElementById(id);
 const yen = (n) => "¥" + Math.abs(n).toLocaleString();
+
+/* ---------------- イベント履歴 ---------------- */
+const HISTORY_KEY = "walica_recent_events";
+const HISTORY_MAX = 10;
+function loadHistory(){ try{ return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]"); }catch(e){ return []; } }
+function saveHistory(list){ localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); }
+function addToHistory(id, name){
+  let list = loadHistory().filter(h=>h.id!==id);
+  list.unshift({id, name, visited: new Date().toISOString()});
+  if(list.length>HISTORY_MAX) list=list.slice(0,HISTORY_MAX);
+  saveHistory(list);
+}
+function removeFromHistory(id){
+  saveHistory(loadHistory().filter(h=>h.id!==id));
+}
+function renderRecentEvents(){
+  const list=loadHistory();
+  const card=$("recent-events-card");
+  if(list.length===0){ card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  const el=$("recent-events-list");
+  el.innerHTML=list.map(h=>{
+    const d=new Date(h.visited);
+    const dateStr=`${d.getMonth()+1}/${d.getDate()}`;
+    return `<div class="recent-item" data-id="${h.id}">
+      <div><div class="recent-name">${esc(h.name)}</div><div class="recent-date">${dateStr} にアクセス</div></div>
+      <button class="recent-remove" data-rid="${h.id}" title="履歴から削除">✕</button>
+    </div>`;
+  }).join("");
+  el.querySelectorAll(".recent-item").forEach(item=>{
+    item.addEventListener("click",(e)=>{
+      if(e.target.closest(".recent-remove")) return;
+      location.href=location.pathname+"?e="+item.dataset.id;
+    });
+  });
+  el.querySelectorAll(".recent-remove").forEach(btn=>{
+    btn.addEventListener("click",(e)=>{
+      e.stopPropagation();
+      removeFromHistory(btn.dataset.rid);
+      renderRecentEvents();
+    });
+  });
+}
 const CAT_LABEL = { tatekae: "📘 立替", loan: "🤝 貸し借り", gamble: "🎲 勝ち負け" };
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -375,6 +436,7 @@ async function init(){
   if(eventId){
     const ev=await store.getEvent(eventId);
     if(!ev){ toast("イベントが見つかりません"); eventId=null; showHome(); return; }
+    addToHistory(eventId, ev.name);
     $("header-event").textContent=ev.name; $("header-event").style.display="block";
     $("view-event").classList.remove("hidden");
     $("share-url").value=location.href;
@@ -383,7 +445,8 @@ async function init(){
 }
 function showHome(){
   $("view-home").classList.remove("hidden");
-  addHomeMemberInput(); addHomeMemberInput(); // 初期2枠
+  addHomeMemberInput(); addHomeMemberInput();
+  renderRecentEvents();
 }
 
 async function refresh(){
@@ -482,7 +545,7 @@ window.editTx=(id)=>{
   if(tx.category==="tatekae"){
     $("t-title").value=tx.title||"";
     if(tx.payer_id) $("t-payer").value=tx.payer_id;
-    $("t-amount").value=tx.amount;
+    $("t-amount").value=tx.amount.toLocaleString();
     const targets=new Set(tx.lines.filter(l=>l.delta<0).map(l=>l.member_id));
     [...$("t-targets").querySelectorAll("input")].forEach(i=>i.checked=targets.has(i.value));
   }else if(tx.category==="loan"){
@@ -490,7 +553,7 @@ window.editTx=(id)=>{
     const from=tx.lines.find(l=>l.delta>0), to=tx.lines.find(l=>l.delta<0);
     if(from) $("l-from").value=from.member_id;
     if(to) $("l-to").value=to.member_id;
-    $("l-amount").value=tx.amount;
+    $("l-amount").value=tx.amount.toLocaleString();
   }else{
     $("g-title").value=tx.title||"";
     const map={}; tx.lines.forEach(l=>map[l.member_id]=l.delta);
@@ -581,7 +644,7 @@ $("btn-save-tx").onclick=async ()=>{
   try{
     if(currentCat==="tatekae"){
       const title=$("t-title").value.trim(), payer=$("t-payer").value,
-            amount=parseInt($("t-amount").value),
+            amount=parseInt(normalizeNumStr($("t-amount").value)),
             targets=[...$("t-targets").querySelectorAll("input:checked")].map(i=>i.value);
       if(!title) return toast("内容を入力してください");
       if(!amount||amount<=0) return toast("金額を入力してください");
@@ -590,7 +653,7 @@ $("btn-save-tx").onclick=async ()=>{
     }else if(currentCat==="loan"){
       const title=$("l-title").value.trim()||"貸し借り",
             from=$("l-from").value, to=$("l-to").value,
-            amount=parseInt($("l-amount").value);
+            amount=parseInt(normalizeNumStr($("l-amount").value));
       if(from===to) return toast("貸した人と借りた人が同じです");
       if(!amount||amount<=0) return toast("金額を入力してください");
       tx={category:"loan",title,payer_id:from,amount,
@@ -644,6 +707,24 @@ function renderSettle(){
         <span class="amt">${yen(p.amount)}</span>
       </div>`).join("");
 }
+function buildSettleText(){
+  const evName=$("header-event").textContent;
+  const balances=calcBalances();
+  const plan=settle(balances);
+  if(plan.length===0) return `【${evName} - 精算】\n精算の必要はありません 🎉`;
+  const lines=plan.map(p=>`${p.from} → ${p.to}：${yen(p.amount)}`);
+  return `【${evName} - 精算】\n${lines.join("\n")}\n\n▼ 詳細はこちら\n${location.href}`;
+}
+$("btn-copy-settle").onclick=()=>{
+  const text=buildSettleText();
+  navigator.clipboard.writeText(text).then(()=>toast("コピーしました")).catch(()=>toast("コピーに失敗しました"));
+};
+if(navigator.share) $("btn-share-settle").classList.remove("hidden");
+$("btn-share-settle").onclick=()=>{
+  const text=buildSettleText();
+  navigator.share({text}).catch(()=>{});
+};
+
 $("settle-chips").addEventListener("click",(e)=>{
   const b=e.target.closest(".chip"); if(!b) return;
   settleFilter=b.dataset.f;
@@ -693,6 +774,29 @@ document.querySelector(".tabs").addEventListener("click",(e)=>{
   if(b.dataset.tab==="add" && editingTxId) exitEditMode();
   switchTab(b.dataset.tab);
 });
+/* ---------------- 金額入力UX改善 ---------------- */
+function normalizeNumStr(v){
+  return v.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[^0-9]/g,"");
+}
+function setupAmountInput(el){
+  el.addEventListener("input",()=>{
+    const pos=el.selectionStart;
+    const before=el.value;
+    el.value=normalizeNumStr(el.value);
+    const diff=before.length-el.value.length;
+    el.setSelectionRange(pos-diff,pos-diff);
+  });
+  el.addEventListener("blur",()=>{
+    const n=parseInt(normalizeNumStr(el.value));
+    if(n) el.value=n.toLocaleString();
+  });
+  el.addEventListener("focus",()=>{
+    el.value=normalizeNumStr(el.value);
+  });
+}
+setupAmountInput($("t-amount"));
+setupAmountInput($("l-amount"));
+
 $("btn-copy").onclick=async ()=>{
   try{ await navigator.clipboard.writeText($("share-url").value); toast("URLをコピーしました"); }
   catch(e){ $("share-url").select(); document.execCommand("copy"); toast("URLをコピーしました"); }
